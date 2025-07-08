@@ -15,5 +15,5 @@
 local.properties
 
 /server/src/main/resources/application.conf
-.idea
-.kotlin
+/.idea
+/.kotlin
