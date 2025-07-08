@@ -13,3 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+/server/src/main/resources/application.conf
