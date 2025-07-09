@@ -43,8 +43,8 @@ fun Application.authenticationPlugin(
                     authorizeUrl = "https://accounts.google.com/o/oauth2/auth",
                     accessTokenUrl = "https://accounts.google.com/o/oauth2/token",
                     requestMethod = HttpMethod.Post,
-                    clientId = System.getenv("GOOGLE_CLIENT_ID"),
-                    clientSecret = System.getenv("GOOGLE_CLIENT_SECRET"),
+                    clientId = System.getProperty("GOOGLE_WEB_CLIENT_ID"),
+                    clientSecret = System.getProperty("GOOGLE_WEB_CLIENT_SECRET"),
                     defaultScopes = listOf(
                         "https://www.googleapis.com/auth/userinfo.profile",
                         "https://www.googleapis.com/auth/userinfo.email"

@@ -17,6 +17,7 @@ import com.andreasmlbngaol.ymma.plugins.authenticationPlugin
 import com.andreasmlbngaol.ymma.plugins.contentNegotiationPlugin
 import com.andreasmlbngaol.ymma.plugins.corsPlugin
 import com.andreasmlbngaol.ymma.plugins.statusPagesPlugin
+import com.andreasmlbngaol.ymma.utils.Env
 import com.andreasmlbngaol.ymma.utils.HTTP_CLIENT
 import com.andreasmlbngaol.ymma.utils.respondJson
 
@@ -53,6 +54,7 @@ fun Application.module() {
 fun initKtor(
     config: ApplicationConfig
 ) {
+    Env.init()
     JwtConfig.init(config)
     DatabaseFactory.init(config)
 }

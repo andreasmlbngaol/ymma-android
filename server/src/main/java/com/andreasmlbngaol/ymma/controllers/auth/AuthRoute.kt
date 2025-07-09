@@ -1,34 +1,88 @@
 package com.andreasmlbngaol.ymma.controllers.auth
 
 import at.favre.lib.crypto.bcrypt.BCrypt
-import io.ktor.client.HttpClient
-import io.ktor.http.Cookie
-import io.ktor.http.HttpStatusCode
-import io.ktor.server.auth.OAuthAccessTokenResponse
-import io.ktor.server.auth.authenticate
-import io.ktor.server.auth.jwt.JWTPrincipal
-import io.ktor.server.auth.principal
-import io.ktor.server.request.receive
-import io.ktor.server.response.respond
-import io.ktor.server.routing.Route
-import io.ktor.server.routing.RoutingContext
-import io.ktor.server.routing.get
-import io.ktor.server.routing.post
-import io.ktor.server.routing.route
-import com.andreasmlbngaol.ymma.domains.auth.LoginRequest
-import com.andreasmlbngaol.ymma.domains.auth.LoginResponse
-import com.andreasmlbngaol.ymma.domains.auth.RegisterRequest
 import com.andreasmlbngaol.ymma.database.dao.UsersDao
-import com.andreasmlbngaol.ymma.domains.auth.ChangePasswordRequest
-import com.andreasmlbngaol.ymma.domains.auth.User
+import com.andreasmlbngaol.ymma.domains.auth.*
+import com.andreasmlbngaol.ymma.email.EmailService.sendEmail
 import com.andreasmlbngaol.ymma.plugins.AuthNames
 import com.andreasmlbngaol.ymma.plugins.AuthNames.JWT_AUTH
 import com.andreasmlbngaol.ymma.plugins.fetchGoogleUserInfo
 import com.andreasmlbngaol.ymma.type.Provider
 import com.andreasmlbngaol.ymma.utils.respondJson
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier
+import com.google.api.client.http.javanet.NetHttpTransport
+import com.google.api.client.json.gson.GsonFactory
+import io.ktor.client.*
+import io.ktor.http.*
+import io.ktor.server.auth.*
+import io.ktor.server.auth.jwt.*
+import io.ktor.server.request.*
+import io.ktor.server.response.*
+import io.ktor.server.routing.*
+import kotlinx.coroutines.coroutineScope
 
 fun Route.authRoute(httpClient: HttpClient) {
     route("/auth") {
+        // Android oauth
+        post("/google-oauth") {
+            val request = call.receive<GoogleLoginRequest>()
+            val idTokenString = request.idToken
+
+            val webClientId = System.getProperty("GOOGLE_WEB_CLIENT_ID")
+                ?: return@post call.respondJson(HttpStatusCode.InternalServerError, "Google Web Client ID not found")
+
+            val verifier = GoogleIdTokenVerifier.Builder(
+                NetHttpTransport(),
+                GsonFactory.getDefaultInstance()
+            )
+                .setAudience(listOf(webClientId))
+                .build()
+
+            val idToken = verifier.verify(idTokenString)
+
+            if (idToken != null) {
+                val payload = idToken.payload
+                val userId = payload.subject
+                val email = payload.email
+                val name = payload["name"] as? String ?: email.substringBefore("@")
+                val picture = payload["picture"] as? String
+                val emailVerified = payload.emailVerified
+
+                var user = UsersDao.findByProviderAndSub(provider = Provider.Google, sub = userId)
+
+                if (user == null) {
+                    user = UsersDao.findByEmail(email)
+                    if (user != null) {
+                        UsersDao.updateOAuth(
+                            id = user.id,
+                            oAuthProvider = Provider.Google,
+                            oAuthSub = userId
+                        )
+                    } else {
+                        val id = UsersDao.create(
+                            name = name,
+                            email = email,
+                            imageUrl = picture,
+                            isVerified = emailVerified,
+                            oAuthProvider = Provider.Google,
+                            oAuthSub = userId
+                        )
+
+                        user = User(
+                            id = id.value,
+                            name = name,
+                            email = email,
+                            imageUrl = picture,
+                            isVerified = emailVerified
+                        )
+                    }
+                }
+
+                setCookieAndRespondToken(user) // atau respond JSON token
+            } else {
+                call.respond(HttpStatusCode.Unauthorized, "Invalid ID token")
+            }
+        }
 
         authenticate(AuthNames.GOOGLE_O_AUTH) {
             get("/login") {}
@@ -61,6 +115,7 @@ fun Route.authRoute(httpClient: HttpClient) {
                         val id = UsersDao.create(
                             name = googleUserInfo.name,
                             email = googleUserInfo.email,
+                            imageUrl = googleUserInfo.imageUrl,
                             isVerified = true,
                             oAuthProvider = Provider.Google,
                             oAuthSub = googleUserInfo.userId
@@ -118,6 +173,22 @@ fun Route.authRoute(httpClient: HttpClient) {
                 email = email,
                 passwordHashed = hashedPassword
             )
+
+            val confirmationUrl = "https://your-app.com/verify?token=test-ajakok"
+
+            val content = """
+                <h3>Konfirmasi Email Anda</h3>
+                <p>Silakan klik link di bawah ini untuk mengonfirmasi email Anda:</p>
+                <a href="$confirmationUrl">Verifikasi Email</a>
+            """.trimIndent()
+
+            coroutineScope {
+                sendEmail(
+                    to = email,
+                    subject = "Konfirmasi Email",
+                    content = content
+                )
+            }
 
             call.respond(
                 HttpStatusCode.Created,
@@ -255,6 +326,7 @@ private fun validatePassword(password: String): Boolean {
     return password.matches(passwordRegex)
 }
 
+@Suppress("unused")
 private fun validateUsername(username: String): Boolean {
     val usernameRegex = "^[a-z0-9._]{4,}$".toRegex()
     return username.matches(usernameRegex)
